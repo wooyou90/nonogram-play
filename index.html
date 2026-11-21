@@ -255,7 +255,7 @@ function layout(){
 window.addEventListener('resize',layout);
 
 /* ---------- 입력 ---------- */
-const board=$('#board');
+const board=$('#board'); board.addEventListener('contextmenu',e=>e.preventDefault());
 function cellAt(e){ const el=document.elementFromPoint(e.clientX,e.clientY); return el&&el.closest&&el.closest('.cell') }
 function nextState(from){ if(from==='.') return cur.color; if(from==='x') return '.'; return from===cur.color?'x':cur.color }
 board.addEventListener('pointerdown',e=>{ if(!cur||cur.done) return; const cell=cellAt(e); if(!cell) return; e.preventDefault(); audio();
@@ -286,7 +286,7 @@ $('#hintBtn').addEventListener('click',()=>{ if(!cur||cur.done) return; audio();
   for(let r=0;r<cur.n;r++) for(let c=0;c<cur.n;c++){ const s=cur.state[r][c], t=cur.p.rows[r][c];
     if(t==='.'){ if(s!=='.'&&s!=='x') wrong.push([r,c]) } else if(s!==t) missing.push([r,c]) }
   if(wrong.length){ const [r,c]=wrong[Math.floor(Math.random()*wrong.length)]; const d=cellEl(r,c); d.classList.remove('bad'); void d.offsetWidth; d.classList.add('bad');
-    setTimeout(()=>{ setCell(r,c,'x'); updateClues(); },450); toast('여기는 색이 없어요'); beep(200,.15,'sawtooth'); return }
+    const me=cur; setTimeout(()=>{ if(cur!==me||cur.done) return; setCell(r,c,'x'); updateClues(); },450); toast('여기는 색이 없어요'); beep(200,.15,'sawtooth'); return }
   if(missing.length){ const [r,c]=missing[Math.floor(Math.random()*missing.length)]; setCell(r,c,cur.p.rows[r][c]); const d=cellEl(r,c); d.classList.remove('glow'); void d.offsetWidth; d.classList.add('glow');
     beep(880,.12); updateClues(); checkWin(); return }
   toast('이미 다 맞았어요!') });
