@@ -84,10 +84,6 @@ h1,.display{font-family:var(--display);font-weight:400;letter-spacing:.01em}
 .cell.b5{border-right:3px solid var(--line2)}
 .cell.r5{border-bottom:3px solid var(--line2)}
 .cell.x::after{content:"✕";position:absolute;inset:0;display:grid;place-items:center;color:var(--cellx);font-weight:700;font-size:calc(var(--cs) * .55);font-family:var(--body)}
-.cell.glow{animation:glow .9s ease-out}
-@keyframes glow{0%{box-shadow:0 0 0 0 var(--star) inset;transform:scale(1.15)}100%{box-shadow:none;transform:none}}
-.cell.bad{animation:bad .5s}
-@keyframes bad{0%,100%{transform:none}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
 #board.won{background:transparent;padding:0;border-radius:0}
 #board.won .clue,#board.won .corner{opacity:0;transition:opacity .5s}
 #board.won .cell{border-color:transparent;animation:pop .5s both;animation-delay:var(--d)}
@@ -115,6 +111,10 @@ h1,.display{font-family:var(--display);font-weight:400;letter-spacing:.01em}
 .wincard .btn.big{height:60px;font-size:1.35rem;padding:0 24px}
 .wincard .btn.go{background:var(--accent2);color:#fff}
 #confetti{position:fixed;inset:0;pointer-events:none;z-index:30}
+#lockOverlay{position:fixed;inset:0;display:grid;place-items:center;background:rgba(20,30,60,.86);z-index:25;padding:16px;touch-action:none}
+#lockOverlay[hidden]{display:none}
+.wincard.lock .emo{animation:none}
+.wincard .count{font-family:var(--display);font-size:4.5rem;line-height:1;color:var(--accent);margin-top:6px}
 .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 20px;border-radius:999px;font-family:var(--display);font-size:1.1rem;opacity:0;transition:opacity .25s;pointer-events:none;z-index:40}
 .toast.show{opacity:1}
 @media (prefers-reduced-motion: reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
@@ -139,7 +139,6 @@ h1,.display{font-family:var(--display);font-weight:400;letter-spacing:.01em}
       <button class="btn ghost" id="homeBtn">🏠 홈</button>
       <div class="ptitle"><span class="lv" id="pLevel"></span><span id="pSize"></span></div>
       <div class="tools">
-        <button class="btn" id="hintBtn">💡 힌트</button>
         <button class="btn" id="clearXBtn">✖ X 지우기</button>
         <button class="btn ghost" id="resetBtn">↺ 다시</button>
       </div>
@@ -158,6 +157,14 @@ h1,.display{font-family:var(--display);font-weight:400;letter-spacing:.01em}
       <button class="btn big go" id="nextBtn">다음 퍼즐 ▶</button>
       <button class="btn big" id="winHomeBtn">🏠 홈</button>
     </div>
+  </div>
+</div>
+<div id="lockOverlay" hidden>
+  <div class="wincard lock">
+    <div class="emo">🔒</div>
+    <h2>잠깐 쉬어요!</h2>
+    <p>너무 빨리 눌렀어요.<br>숫자를 보고 천천히 생각해 봐요</p>
+    <div class="count" id="lockCount">30</div>
   </div>
 </div>
 <canvas id="confetti"></canvas>
@@ -214,7 +221,7 @@ function openPuzzle(idx){
   $('#home').hidden=true; $('#play').hidden=false; $('#winOverlay').hidden=true;
   $('#pLevel').textContent=LEVELS[p.level].name; $('#pLevel').style.setProperty('--lc',LEVELS[p.level].color);
   $('#pSize').textContent=`${n}×${n}`;
-  buildBoard(); buildPalette(); layout(); disarmReset();
+  buildBoard(); buildPalette(); layout(); disarmReset(); mis=0; showLock();
 }
 function buildBoard(){
   const b=$('#board'), n=cur.n, p=cur.p; b.className=''; b.innerHTML=''; b.style.setProperty('--n',n);
@@ -258,14 +265,14 @@ window.addEventListener('resize',layout);
 const board=$('#board'); board.addEventListener('contextmenu',e=>e.preventDefault());
 function cellAt(e){ const el=document.elementFromPoint(e.clientX,e.clientY); return el&&el.closest&&el.closest('.cell') }
 function nextState(from){ if(from==='.') return cur.color; if(from==='x') return '.'; return from===cur.color?'x':cur.color }
-board.addEventListener('pointerdown',e=>{ if(!cur||cur.done) return; const cell=cellAt(e); if(!cell) return; e.preventDefault(); audio();
+board.addEventListener('pointerdown',e=>{ if(!cur||cur.done||locked()) return; const cell=cellAt(e); if(!cell) return; e.preventDefault(); audio();
   try{board.setPointerCapture(e.pointerId)}catch(_){}
   const r=+cell.dataset.r,c=+cell.dataset.c; const from=cur.state[r][c]; drag={from,to:nextState(from),seen:new Set()}; applyDrag(r,c); disarmReset() });
-board.addEventListener('pointermove',e=>{ if(!drag||!cur||cur.done) return; const cell=cellAt(e); if(!cell) return; applyDrag(+cell.dataset.r,+cell.dataset.c) });
+board.addEventListener('pointermove',e=>{ if(!drag||!cur||cur.done||locked()) return; const cell=cellAt(e); if(!cell) return; applyDrag(+cell.dataset.r,+cell.dataset.c) });
 ['pointerup','pointercancel','lostpointercapture'].forEach(ev=>board.addEventListener(ev,()=>{drag=null}));
 function applyDrag(r,c){ const key=r*16+c; if(drag.seen.has(key)) return; drag.seen.add(key); if(cur.state[r][c]!==drag.from) return;
-  setCell(r,c,drag.to); if(drag.to==='x') beep(300,.04,'triangle'); else if(drag.to==='.') beep(220,.04,'triangle'); else beep(640,.06);
-  updateClues(); if(checkWin()){ drag=null } }
+  const prev=cur.state[r][c], to=drag.to; setCell(r,c,to); if(to==='x') beep(300,.04,'triangle'); else if(to==='.') beep(220,.04,'triangle'); else beep(640,.06);
+  updateClues(); if(noteMove(r,c,prev,to)){ drag=null; return } if(checkWin()){ drag=null } }
 function cellEl(r,c){ return board.children[1+cur.n+r*(cur.n+1)+1+c] }
 function setCell(r,c,v){ cur.state[r][c]=v; const d=cellEl(r,c); d.classList.toggle('x',v==='x'); d.classList.toggle('empty',v==='.'); d.style.background = (v==='.'||v==='x')?'':cur.p.colors[v] }
 function updateClues(){
@@ -278,18 +285,28 @@ function checkWin(){
   win(); return true;
 }
 
+/* ---------- 장난 감지 → 잠금 ---------- */
+/* 칸을 바꿀 때마다 점수: 틀린 색 칠하기·맞은 칸 지우기 +3, 맞는 색 -1, 그 외 +0.5. 초당 1.2씩 줄어듦. 36 이상이면 잠금 */
+let mis=0, misT=0, warnT=0, lockN=0, lockTimer=0;
+const locked=()=>!!(progress.lockUntil&&progress.lockUntil>Date.now());
+function noteMove(r,c,prev,v){ const now=performance.now(); mis=Math.max(0,mis-(now-misT)/1000*1.2); misT=now;
+  const t=cur.p.rows[r][c]; let d=.5;
+  if(v!=='.'&&v!=='x') d=(v===t)?-1:3; else if(t!=='.'&&prev===t) d=3;
+  mis=Math.max(0,mis+d);
+  if(mis>=36){ lock(); return true }
+  if(mis>=20&&now-warnT>6000){ warnT=now; toast('천천히 생각하면서 눌러 봐요 🤔') }
+  return false }
+function lock(){ lockN++; const sec=30*Math.min(lockN,3); progress.lockUntil=Date.now()+sec*1000; save(); mis=0; drag=null; disarmReset(); beep(180,.35,'sawtooth',0,.12); showLock() }
+function showLock(){ if(!locked()) return false; const ov=$('#lockOverlay'); ov.hidden=false; clearInterval(lockTimer);
+  const tick=()=>{ const left=Math.ceil((progress.lockUntil-Date.now())/1000);
+    if(left<=0){ clearInterval(lockTimer); lockTimer=0; ov.hidden=true; delete progress.lockUntil; save(); toast('다시 시작! 천천히 해 봐요'); beep(660,.15); return }
+    $('#lockCount').textContent=left };
+  tick(); lockTimer=setInterval(tick,250); return true }
+$('#lockOverlay').addEventListener('pointerdown',e=>e.preventDefault());
+
 /* ---------- 도구 ---------- */
 $('#clearXBtn').addEventListener('click',()=>{ if(!cur||cur.done) return; let k=0; for(let r=0;r<cur.n;r++) for(let c=0;c<cur.n;c++) if(cur.state[r][c]==='x'){ setCell(r,c,'.'); k++ }
   toast(k?`X ${k}개를 지웠어요`:'지울 X가 없어요'); beep(260,.08,'triangle'); disarmReset() });
-$('#hintBtn').addEventListener('click',()=>{ if(!cur||cur.done) return; audio(); disarmReset();
-  const wrong=[],missing=[];
-  for(let r=0;r<cur.n;r++) for(let c=0;c<cur.n;c++){ const s=cur.state[r][c], t=cur.p.rows[r][c];
-    if(t==='.'){ if(s!=='.'&&s!=='x') wrong.push([r,c]) } else if(s!==t) missing.push([r,c]) }
-  if(wrong.length){ const [r,c]=wrong[Math.floor(Math.random()*wrong.length)]; const d=cellEl(r,c); d.classList.remove('bad'); void d.offsetWidth; d.classList.add('bad');
-    const me=cur; setTimeout(()=>{ if(cur!==me||cur.done) return; setCell(r,c,'x'); updateClues(); },450); toast('여기는 색이 없어요'); beep(200,.15,'sawtooth'); return }
-  if(missing.length){ const [r,c]=missing[Math.floor(Math.random()*missing.length)]; setCell(r,c,cur.p.rows[r][c]); const d=cellEl(r,c); d.classList.remove('glow'); void d.offsetWidth; d.classList.add('glow');
-    beep(880,.12); updateClues(); checkWin(); return }
-  toast('이미 다 맞았어요!') });
 $('#resetBtn').addEventListener('click',()=>{ if(!cur) return;
   if(!resetArmed){ resetArmed=setTimeout(disarmReset,3000); $('#resetBtn').classList.add('warn'); $('#resetBtn').textContent='정말 다시 할까요?'; return }
   disarmReset(); for(let r=0;r<cur.n;r++) for(let c=0;c<cur.n;c++) setCell(r,c,'.'); updateClues(); toast('처음부터 다시!') });
@@ -325,7 +342,7 @@ function confetti(){ const cv=$('#confetti'), g=cv.getContext('2d'); cv.width=in
     if(alive&&now-t0<4000) requestAnimationFrame(f); else g.clearRect(0,0,cv.width,cv.height) } requestAnimationFrame(f) }
 
 $('#muteBtn').textContent=muted?'🔇':'🔊';
-renderHome();
+renderHome(); showLock();
 </script>
 
 </body>
